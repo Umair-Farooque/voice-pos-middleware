@@ -687,20 +687,35 @@
                 audioChunks = [];
                 
                 mediaRecorder.ondataavailable = event => {
-                    audioChunks.push(event.data);
+                    console.log('ondataavailable:', event.data ? event.data.size : 'null');
+                    if (event.data && event.data.size > 0) {
+                        audioChunks.push(event.data);
+                    }
                 };
                 
                 mediaRecorder.onstop = async () => {
+                    console.log('Chunks collected:', audioChunks.length);
+                    console.log('AudioChunks:', audioChunks);
                     const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                    const arrayBuffer = await audioBlob.arrayBuffer();
-                    const audioBytes = new Uint8Array(arrayBuffer);
+                    console.log('Blob size:', audioBlob.size);
                     
                     document.getElementById('micStatus').textContent = 'Processing...';
                     document.getElementById('micStatus').classList.remove('listening');
                     
-                    const base64Audio = btoa(String.fromCharCode(...audioBytes));
+                    const reader = new FileReader();
+                    console.log('Starting FileReader...');
+                    const base64Audio = await new Promise((resolve) => {
+                        reader.onloadend = () => {
+                            console.log('Reader complete, result length:', reader.result.length);
+                            resolve(reader.result.split(',')[1]);
+                        };
+                        reader.onerror = () => console.error('Reader error:', reader.error);
+                        reader.readAsDataURL(audioBlob);
+                    });
+                    console.log('Base64 length:', base64Audio.length);
                     
                     try {
+                        console.log('Sending fetch to /chat...');
                         const response = await fetch('/chat', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
@@ -708,6 +723,9 @@
                         });
                         
                         const data = await response.json();
+                        console.log('Server response:', data);
+                        console.log('Transcript:', data.transcript);
+                        console.log('Response text:', data.response);
                         
                         addTranscriptItem('user', data.transcript);
                         if (data.response) {
@@ -732,7 +750,7 @@
                     stream.getTracks().forEach(track => track.stop());
                 };
                 
-                mediaRecorder.start();
+                mediaRecorder.start(100);
                 isRecording = true;
                 document.getElementById('micBtn').classList.add('recording');
                 document.getElementById('micBtn').textContent = '⏹';
@@ -747,6 +765,7 @@
 
         function stopRecording() {
             if (mediaRecorder && isRecording) {
+                mediaRecorder.requestData();
                 mediaRecorder.stop();
                 isRecording = false;
                 document.getElementById('micBtn').classList.remove('recording');
